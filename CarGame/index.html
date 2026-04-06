@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Square Car Game</title>
+<meta name="viewport" content="width=420,initial-scale=1"/>
+<style>
+  body {
+    margin: 0;
+    background: #222;
+    font-family: Arial, sans-serif;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  #gameContainer {
+    position: relative;
+    width: 400px;
+    height: 400px;
+    margin: 30px 0;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #444 50px, #666 400px);
+    box-shadow: 0 0 18px #000;
+    overflow: hidden;
+    outline: 2px solid #777;
+  }
+  #scoreDisplay {
+    font-size: 20px;
+    font-weight: bold;
+    margin-bottom: 8px;
+  }
+  .controls {
+    margin: 8px 0 12px 0;
+  }
+  button {
+    background-color: #444;
+    border: none;
+    color: white;
+    padding: 10px 15px;
+    margin: 0 5px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.3s ease;
+    outline: none;
+  }
+  button:hover {
+    background-color: #666;
+  }
+  /* Player styling */
+  #playerCar {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg,#f4353b,#d8003a 60%,#303);
+    position: absolute;
+    top: 180px;
+    left: 180px;
+    border-radius: 15px 15px 10px 10px;
+    box-shadow: 0 0 18px rgba(255, 0, 0, 0.6);
+    transition: transform 0.2s, box-shadow 0.2s, background 0.3s;
+    z-index: 10;
+  }
+  #playerCar:hover {
+    transform: scale(1.1);
+    background: linear-gradient(135deg,#fc5c65,#d8003a 60%,#303);
+    box-shadow: 0 0 24px #ff6060;
+  }
+  /* Headlight effect */
+  #playerCar::before {
+    content: '';
+    position: absolute;
+    bottom: -8px; left: 10px;
+    width: 20px; height: 18px;
+    background: radial-gradient(ellipse at center, rgba(255,255,180,0.36) 0%, transparent 80%);
+    filter: blur(4px);
+    pointer-events: none;
+    z-index: 0;
+  }
+  /* Enemy obstacle styles */
+  .obstacle {
+    width: 40px; height: 40px;
+    position: absolute;
+    border-radius: 13px;
+    box-shadow: 0 0 10px rgba(0,160,255,0.3);
+    z-index: 7;
+    background: linear-gradient(135deg,#0077ff,#65f7b2 70%,#fff);
+    transition: box-shadow 0.2s;
+  }
+  .obstacle.green { background: linear-gradient(135deg,#7DE756,#079c4b 60%,#fff); }
+  .obstacle.yellow { background: linear-gradient(135deg,#ffe35a,#c1ae0a 70%,#fff);}
+  .obstacle.purple { background: linear-gradient(135deg,#a37cff,#6F2DBD 70%,#fff);}
+  /* Overlays */
+  #overlay {
+    position: absolute;
+    width: 100%; height: 100%;
+    top: 0; left: 0;
+    background: rgba(50,50,70,0.90);
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    flex-direction: column;
+    font-size: 2em;
+    font-weight: bold;
+    color: #fff8;
+    backdrop-filter: blur(2px);
+  }
+  #instructions {
+    font-size: 1em;
+    font-weight: normal;
+    margin-top: 24px;
+  }
+</style>
+</head>
+<body>
+<div id="scoreDisplay">Score: 0</div>
+<div class="controls">
+  <button id="startBtn">Start</button>
+  <button id="pauseBtn">Pause</button>
+  <button id="restartBtn">Restart</button>
+</div>
+<div id="gameContainer">
+  <div id="playerCar"></div>
+  <div id="overlay">
+    Square Car Game<br>
+    <span id="instructions">Arrow keys to move in all directions.<br>Press Start to play.</span>
+  </div>
+</div>
+<script>
+const playerCar = document.getElementById('playerCar');
+const gameContainer = document.getElementById('gameContainer');
+const scoreDisplay = document.getElementById('scoreDisplay');
+const startBtn = document.getElementById('startBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const restartBtn = document.getElementById('restartBtn');
+const overlay = document.getElementById('overlay');
+const instructions = document.getElementById('instructions');
+
+const gameSize = 400;
+let playerPosX = 180, playerPosY = 180, targetX = 180, targetY = 180;
+let isGameOver = true, gamePaused = false, score = 0, speed = 3;
+let obstacles = [], gameFrame, spawnRate = 45, frameCount = 0;
+
+// Returns obstacle color class random
+function getRandomObstacleClass() {
+  const colors = ['green','yellow','purple'];
+  return colors[Math.floor(Math.random()*colors.length)];
+}
+
+// Returns a random side and start position {side, x, y, dx, dy}
+function getSpawnPos() {
+  const side = ['top','right','bottom','left'][Math.floor(Math.random()*4)];
+  let pos = {};
+  if(side==='top') {
+    pos.x = Math.floor(Math.random()*(gameSize-40));
+    pos.y = -40;
+    pos.dx = 0; pos.dy = speed;
+  } else if(side==='right') {
+    pos.x = gameSize;
+    pos.y = Math.floor(Math.random()*(gameSize-40));
+    pos.dx = -speed; pos.dy = 0;
+  } else if(side==='bottom') {
+    pos.x = Math.floor(Math.random()*(gameSize-40));
+    pos.y = gameSize;
+    pos.dx = 0; pos.dy = -speed;
+  } else { // left
+    pos.x = -40;
+    pos.y = Math.floor(Math.random()*(gameSize-40));
+    pos.dx = speed; pos.dy = 0;
+  }
+  return pos;
+}
+
+// Obstacle object with movement
+function createObstacle() {
+  const obs = document.createElement('div');
+  obs.className = 'obstacle ' + getRandomObstacleClass();
+  const spawn = getSpawnPos();
+  obs.style.left = spawn.x+'px';
+  obs.style.top = spawn.y+'px';
+  obs.dataset.dx = spawn.dx;
+  obs.dataset.dy = spawn.dy;
+  obstacles.push(obs);
+  gameContainer.appendChild(obs);
+  return obs;
+}
+
+// Move obstacles and check collision
+function moveObstacles() {
+  for(let i=obstacles.length-1; i>=0; i--) {
+    const obs = obstacles[i];
+    let x = parseFloat(obs.style.left), y = parseFloat(obs.style.top);
+    let dx = parseFloat(obs.dataset.dx), dy = parseFloat(obs.dataset.dy);
+    x += dx; y += dy;
+
+    obs.style.left = x+'px';
+    obs.style.top = y+'px';
+
+    // Remove if out of square area
+    if(x < -40 || x > gameSize || y < -40 || y > gameSize) {
+      gameContainer.removeChild(obs);
+      obstacles.splice(i, 1);
+      continue;
+    }
+    if(checkCollision(playerCar, obs)) endGame();
+  }
+}
+
+// Axis-aligned collision in square region
+function checkCollision(el1, el2) {
+  const r1 = el1.getBoundingClientRect(), r2 = el2.getBoundingClientRect();
+  const off = gameContainer.getBoundingClientRect();
+  let b1 = {
+    left: r1.left-off.left, right: r1.right-off.left,
+    top: r1.top-off.top, bottom: r1.bottom-off.top
+  }, b2 = {
+    left: r2.left-off.left, right: r2.right-off.left,
+    top: r2.top-off.top, bottom: r2.bottom-off.top
+  };
+  return !(b1.right<b2.left||b1.left>b2.right||b1.bottom<b2.top||b1.top>b2.bottom);
+}
+
+function updateScore() {
+  score++;
+  scoreDisplay.textContent = 'Score: ' + score;
+  if(score%60===0) speed += 1;
+}
+
+function updatePlayerPosition() {
+  if (playerPosX < targetX) playerPosX = Math.min(playerPosX + 4, targetX);
+  if (playerPosX > targetX) playerPosX = Math.max(playerPosX - 4, targetX);
+  if (playerPosY < targetY) playerPosY = Math.min(playerPosY + 4, targetY);
+  if (playerPosY > targetY) playerPosY = Math.max(playerPosY - 4, targetY);
+  playerCar.style.left = playerPosX+'px'; playerCar.style.top = playerPosY+'px';
+}
+
+function gameLoop() {
+  if(isGameOver||gamePaused) return;
+  frameCount++;
+  updatePlayerPosition();
+  moveObstacles();
+  updateScore();
+  if(frameCount%spawnRate===0) createObstacle();
+  gameFrame = requestAnimationFrame(gameLoop);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (isGameOver || gamePaused) return;
+  if(e.key==='ArrowLeft') targetX = Math.max(0, targetX-30);
+  else if(e.key==='ArrowRight') targetX = Math.min(gameSize-40, targetX+30);
+  else if(e.key==='ArrowUp') targetY = Math.max(0, targetY-30);
+  else if(e.key==='ArrowDown') targetY = Math.min(gameSize-40, targetY+30);
+});
+
+startBtn.onclick = () => {
+  if(isGameOver){
+    resetGame();
+    overlay.style.display='none';
+    gameLoop();
+  } else if(gamePaused) {
+    gamePaused=false; overlay.style.display='none'; gameLoop();
+  }
+};
+pauseBtn.onclick = () => {
+  if(!isGameOver) {
+    gamePaused = !gamePaused;
+    if(gamePaused) { overlay.style.display='flex'; overlay.textContent="Paused"; }
+    else { overlay.style.display='none'; gameLoop(); }
+  }
+};
+restartBtn.onclick = () => {
+  resetGame();
+  overlay.style.display='none';
+  gameLoop();
+};
+
+function endGame() {
+  isGameOver=true; cancelAnimationFrame(gameFrame);
+  overlay.style.display='flex';
+  overlay.innerHTML = `GAME OVER<br><span style="font-size:1em; font-weight:normal;">Your Score: ${score}</span><div id="instructions">Press Restart to try again!</div>`;
+}
+
+function resetGame() {
+  obstacles.forEach(obs => gameContainer.removeChild(obs)); obstacles=[];
+  speed = 3; score = 0; scoreDisplay.textContent = 'Score: 0';
+  playerPosX = 180; playerPosY = 180; targetX = 180; targetY = 180;
+  playerCar.style.left = playerPosX+'px'; playerCar.style.top = playerPosY+'px';
+  isGameOver=false; gamePaused=false; frameCount=0;
+  overlay.innerHTML = `Square Car Game<br><span id="instructions">Arrow keys to move in all directions.<br>Press Start to play.</span>`;
+  overlay.style.display='flex';
+}
+
+resetGame();
+</script>
+</body>
+</html>
